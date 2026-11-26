@@ -1,0 +1,816 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cvkey
+          key: cvkey-v1
+
+      - name: Generate Android project around your index.html
+        run: |
+          set -e
+          if [ ! -f index.html ]; then echo "::error::Upload your ChessVision HTML to the repo root and name it index.html"; exit 1; fi
+          P="$GITHUB_WORKSPACE/proj"
+          rm -rf "$P"
+          mkdir -p "$P"
+          mkdir -p "$P/app"
+          mkdir -p "$P/app/src/main"
+          mkdir -p "$P/app/src/main/assets"
+          mkdir -p "$P/app/src/main/java/com/chessvision/overlay"
+          mkdir -p "$P/app/src/main/res/drawable"
+          mkdir -p "$P/app/src/main/res/mipmap-anydpi-v26"
+          mkdir -p "$P/app/src/main/res/values"
+          mkdir -p "$P"
+          cat > "$P/settings.gradle.kts" <<'CV_EOF_7'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ChessVisionOverlay"
+          include(":app")
+          CV_EOF_7
+          cat > "$P/build.gradle.kts" <<'CV_EOF_7'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          CV_EOF_7
+          cat > "$P/gradle.properties" <<'CV_EOF_7'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          CV_EOF_7
+          cat > "$P/app/build.gradle.kts" <<'CV_EOF_7'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.chessvision.overlay"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.chessvision.overlay"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              // Fixed debug key so every CI build is signed the same way and installs over the previous one.
+              signingConfigs {
+                  getByName("debug") {
+                      storeFile = file("debug.keystore")
+                      storePassword = "android"
+                      keyAlias = "androiddebugkey"
+                      keyPassword = "android"
+                  }
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.webkit:webkit:1.11.0")
+          }
+          CV_EOF_7
+          cat > "$P/app/src/main/AndroidManifest.xml" <<'CV_EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="false"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="ChessVision"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".OverlayService"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="floating chess analysis overlay" />
+                  </service>
+              </application>
+          </manifest>
+          CV_EOF_7
+          cat > "$P/app/src/main/res/values/colors.xml" <<'CV_EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#151922</color>
+          </resources>
+          CV_EOF_7
+          cat > "$P/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml" <<'CV_EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_fg" />
+          </adaptive-icon>
+          CV_EOF_7
+          cat > "$P/app/src/main/res/drawable/ic_fg.xml" <<'CV_EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path android:fillColor="#ECD9B0" android:pathData="M30,30h24v24h-24z" />
+              <path android:fillColor="#B58863" android:pathData="M54,30h24v24h-24z" />
+              <path android:fillColor="#B58863" android:pathData="M30,54h24v24h-24z" />
+              <path android:fillColor="#ECD9B0" android:pathData="M54,54h24v24h-24z" />
+              <path android:fillColor="#16A34A" android:pathData="M54,54m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+          </vector>
+          CV_EOF_7
+          cat > "$P/app/src/main/assets/native.js" <<'CV_EOF_7'
+          /* Injected by OverlayService after index.html loads. Adapts the page to the native floating window. */
+          (function () {
+            if (window.__cvNative) return;
+            window.__cvNative = 1;
+            var A = window.Android;
+            if (!A) return;
+
+            function $(id) { return document.getElementById(id); }
+
+            var st = document.createElement('style');
+            st.textContent =
+              'html,body{background:transparent!important}' +
+              '#win{left:0!important;top:0!important;width:100%!important;height:100%!important;box-shadow:none!important}';
+            document.head.appendChild(st);
+
+            /* tell the native side which strip of the header is draggable */
+            function zones() {
+              var h = $('hdr'), p = $('bPanel');
+              if (h && p) A.setZones(h.offsetHeight, p.getBoundingClientRect().left);
+            }
+
+            /* minimize / fit are handled by the native window, not the page */
+            document.addEventListener('click', function (e) {
+              var b = e.target.closest && e.target.closest('button');
+              if (!b) return;
+              if (b.id === 'bMin') { e.stopImmediatePropagation(); e.preventDefault(); A.minimize(); }
+              else if (b.id === 'bFit') { e.stopImmediatePropagation(); e.preventDefault(); A.toggleFit(); }
+            }, true);
+
+            /* keyboard only works when the overlay window is focusable: enable it while the FEN box is active */
+            var fe = $('fen');
+            if (fe) {
+              fe.addEventListener('focus', function () { A.setFocusable(true); });
+              fe.addEventListener('blur', function () {
+                setTimeout(function () { if (document.activeElement !== fe) A.setFocusable(false); }, 150);
+              });
+              document.addEventListener('pointerdown', function (e) {
+                if (e.target !== fe && document.activeElement === fe) fe.blur();
+              }, true);
+            }
+
+            /* close button */
+            var hdr = $('hdr');
+            if (hdr) {
+              var c = document.createElement('button');
+              c.className = 'ib';
+              c.title = 'Close';
+              c.textContent = '\u2715';
+              c.onclick = function () { A.close(); };
+              hdr.appendChild(c);
+            }
+
+            zones();
+            addEventListener('resize', zones);
+            if (window.ResizeObserver && hdr) new ResizeObserver(zones).observe(hdr);
+          })();
+          CV_EOF_7
+          cat > "$P/app/src/main/java/com/chessvision/overlay/OverlayRoot.kt" <<'CV_EOF_7'
+          package com.chessvision.overlay
+
+          import android.content.Context
+          import android.view.MotionEvent
+          import android.view.ViewConfiguration
+          import android.widget.FrameLayout
+          import kotlin.math.abs
+
+          interface OverlayHost {
+              fun isMini(): Boolean
+              fun headerPx(): Int
+              fun dragWidthPx(): Int
+              fun posX(): Int
+              fun posY(): Int
+              fun sizeW(): Int
+              fun sizeH(): Int
+              fun moveTo(x: Int, y: Int)
+              fun resizeTo(w: Int, h: Int)
+              fun restore()
+              fun commit()
+          }
+
+          /**
+           * Root view of the floating window. It grabs touches that start on the header drag strip,
+           * the bottom-right resize grip, or anywhere on the minimized bubble, and moves/resizes the
+           * real window. Every other touch goes to the WebView.
+           */
+          class OverlayRoot(ctx: Context, private val host: OverlayHost) : FrameLayout(ctx) {
+
+              private var mode = 0 // 0 = pass to WebView, 1 = drag, 2 = resize, 3 = bubble
+              private var downX = 0f
+              private var downY = 0f
+              private var x0 = 0
+              private var y0 = 0
+              private var w0 = 0
+              private var h0 = 0
+              private var moved = false
+              private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
+              private val grip = (30 * ctx.resources.displayMetrics.density).toInt()
+
+              override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+                  if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                      mode = when {
+                          host.isMini() -> 3
+                          ev.x > width - grip && ev.y > height - grip -> 2
+                          ev.y < host.headerPx() && ev.x < host.dragWidthPx() -> 1
+                          else -> 0
+                      }
+                      if (mode != 0) {
+                          downX = ev.rawX
+                          downY = ev.rawY
+                          x0 = host.posX()
+                          y0 = host.posY()
+                          w0 = host.sizeW()
+                          h0 = host.sizeH()
+                          moved = false
+                          return true
+                      }
+                  }
+                  return false
+              }
+
+              override fun onTouchEvent(ev: MotionEvent): Boolean {
+                  if (mode == 0) return false
+                  val dx = (ev.rawX - downX).toInt()
+                  val dy = (ev.rawY - downY).toInt()
+                  when (ev.actionMasked) {
+                      MotionEvent.ACTION_MOVE -> {
+                          if (!moved && (abs(dx) > slop || abs(dy) > slop)) moved = true
+                          if (moved) {
+                              if (mode == 2) {
+                                  host.resizeTo(w0 + dx, h0 + dy)
+                              } else {
+                                  host.moveTo(x0 + dx, y0 + dy)
+                              }
+                          }
+                      }
+                      MotionEvent.ACTION_UP -> {
+                          if (mode == 3 && !moved) {
+                              host.restore()
+                          } else {
+                              host.commit()
+                          }
+                          mode = 0
+                      }
+                      MotionEvent.ACTION_CANCEL -> {
+                          host.commit()
+                          mode = 0
+                      }
+                  }
+                  return true
+              }
+          }
+          CV_EOF_7
+          cat > "$P/app/src/main/java/com/chessvision/overlay/MainActivity.kt" <<'CV_EOF_7'
+          package com.chessvision.overlay
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class MainActivity : Activity() {
+
+              private lateinit var status: TextView
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val d = resources.displayMetrics.density
+                  fun dp(v: Int): Int = (v * d).toInt()
+
+                  val col = LinearLayout(this)
+                  col.orientation = LinearLayout.VERTICAL
+                  col.setBackgroundColor(Color.parseColor("#0B0D12"))
+                  col.setPadding(dp(24), dp(56), dp(24), dp(24))
+
+                  val title = TextView(this)
+                  title.text = "ChessVision"
+                  title.textSize = 28f
+                  title.setTextColor(Color.WHITE)
+                  col.addView(title)
+
+                  val help = TextView(this)
+                  help.text = "1. Allow \"Display over other apps\".\n2. Tap Start overlay.\n3. Open YouTube. The board floats on top: drag the header to move it, drag the bottom-right corner to resize, tap \u2013 to shrink it to a bubble."
+                  help.textSize = 15f
+                  help.setTextColor(Color.parseColor("#C9D1E0"))
+                  help.setPadding(0, dp(12), 0, dp(12))
+                  col.addView(help)
+
+                  status = TextView(this)
+                  status.textSize = 15f
+                  status.setTextColor(Color.parseColor("#FBBF24"))
+                  col.addView(status)
+
+                  fun btn(label: String, action: () -> Unit) {
+                      val b = Button(this)
+                      b.text = label
+                      b.setOnClickListener { action() }
+                      val p = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      )
+                      p.topMargin = dp(12)
+                      col.addView(b, p)
+                  }
+
+                  btn("1. Allow overlay permission") {
+                      startActivity(
+                          Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))
+                      )
+                  }
+                  btn("2. Start overlay") {
+                      if (!Settings.canDrawOverlays(this)) {
+                          Toast.makeText(this, "Allow the overlay permission first", Toast.LENGTH_LONG).show()
+                      } else {
+                          if (Build.VERSION.SDK_INT >= 33 &&
+                              checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                          ) {
+                              requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+                          }
+                          startForegroundService(Intent(this, OverlayService::class.java))
+                          moveTaskToBack(true)
+                      }
+                  }
+                  btn("Stop overlay") {
+                      stopService(Intent(this, OverlayService::class.java))
+                  }
+
+                  setContentView(col)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  status.text = if (Settings.canDrawOverlays(this)) {
+                      "Overlay permission: granted"
+                  } else {
+                      "Overlay permission: NOT granted"
+                  }
+              }
+          }
+          CV_EOF_7
+          cat > "$P/app/src/main/java/com/chessvision/overlay/OverlayService.kt" <<'CV_EOF_7'
+          package com.chessvision.overlay
+
+          import android.annotation.SuppressLint
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.content.res.Configuration
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.graphics.Rect
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Build
+          import android.os.Handler
+          import android.os.IBinder
+          import android.os.Looper
+          import android.provider.Settings
+          import android.util.DisplayMetrics
+          import android.view.Gravity
+          import android.view.View
+          import android.view.ViewGroup
+          import android.view.WindowManager
+          import android.view.inputmethod.InputMethodManager
+          import android.webkit.JavascriptInterface
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebResourceResponse
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import android.widget.FrameLayout
+          import android.widget.TextView
+          import androidx.webkit.WebViewAssetLoader
+          import kotlin.math.max
+          import kotlin.math.min
+
+          class OverlayService : Service(), OverlayHost {
+
+              companion object {
+                  const val ACTION_STOP = "com.chessvision.overlay.STOP"
+                  private const val CHANNEL = "overlay"
+                  private const val NOTIF_ID = 17
+              }
+
+              private lateinit var wm: WindowManager
+              private lateinit var lp: WindowManager.LayoutParams
+              private var root: OverlayRoot? = null
+              private var web: WebView? = null
+              private var bubble: TextView? = null
+              private val ui = Handler(Looper.getMainLooper())
+
+              private var mini = false
+              private var fit = false
+              private var saved = intArrayOf(0, 0, 0, 0) // x, y, w, h of the normal (not fit / not mini) window
+              private var hdrPx = 0
+              private var dragPx = 0
+
+              private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+              @Suppress("DEPRECATION")
+              private fun bounds(): Rect {
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      return wm.maximumWindowMetrics.bounds
+                  }
+                  val m = DisplayMetrics()
+                  wm.defaultDisplay.getRealMetrics(m)
+                  return Rect(0, 0, m.widthPixels, m.heightPixels)
+              }
+
+              private fun sw(): Int = bounds().width()
+              private fun sh(): Int = bounds().height()
+
+              override fun onBind(intent: Intent?): IBinder? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  if (intent?.action == ACTION_STOP) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+                  startAsForeground()
+                  if (root == null) {
+                      if (!Settings.canDrawOverlays(this)) {
+                          stopSelf()
+                          return START_NOT_STICKY
+                      }
+                      createOverlay()
+                  }
+                  return START_STICKY
+              }
+
+              private fun startAsForeground() {
+                  val nm = getSystemService(NotificationManager::class.java)
+                  nm.createNotificationChannel(
+                      NotificationChannel(CHANNEL, "Overlay", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val open = PendingIntent.getActivity(
+                      this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val stop = PendingIntent.getService(
+                      this, 1,
+                      Intent(this, OverlayService::class.java).setAction(ACTION_STOP),
+                      PendingIntent.FLAG_IMMUTABLE
+                  )
+                  @Suppress("DEPRECATION")
+                  val n = Notification.Builder(this, CHANNEL)
+                      .setSmallIcon(android.R.drawable.ic_menu_compass)
+                      .setContentTitle("ChessVision overlay is running")
+                      .setContentText("Tap to open settings")
+                      .setContentIntent(open)
+                      .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stop)
+                      .setOngoing(true)
+                      .build()
+                  if (Build.VERSION.SDK_INT >= 34) {
+                      startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                  } else {
+                      startForeground(NOTIF_ID, n)
+                  }
+              }
+
+              @SuppressLint("SetJavaScriptEnabled")
+              private fun createOverlay() {
+                  val prefs = getSharedPreferences("geom", MODE_PRIVATE)
+                  val w = max(dp(200), min(prefs.getInt("w", dp(360)), sw()))
+                  val h = max(dp(240), min(prefs.getInt("h", dp(600)), sh() - dp(40)))
+                  val x = prefs.getInt("x", (sw() - w) / 2)
+                  val y = prefs.getInt("y", dp(40))
+                  saved = intArrayOf(x, y, w, h)
+
+                  lp = WindowManager.LayoutParams(
+                      w, h,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                          WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                          WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                      PixelFormat.TRANSLUCENT
+                  )
+                  lp.gravity = Gravity.TOP or Gravity.START
+                  lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+                  lp.x = max(0, min(x, sw() - w))
+                  lp.y = max(0, min(y, sh() - h))
+
+                  val nativeJs = assets.open("native.js").bufferedReader().use { it.readText() }
+                  val loader = WebViewAssetLoader.Builder()
+                      .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+                      .build()
+
+                  val wv = WebView(this)
+                  wv.setBackgroundColor(Color.TRANSPARENT)
+                  wv.overScrollMode = View.OVER_SCROLL_NEVER
+                  wv.settings.javaScriptEnabled = true
+                  wv.settings.domStorageEnabled = true
+                  wv.settings.allowFileAccess = false
+                  wv.settings.allowContentAccess = false
+                  wv.webViewClient = object : WebViewClient() {
+                      override fun shouldInterceptRequest(
+                          view: WebView,
+                          request: WebResourceRequest
+                      ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+                      override fun onPageFinished(view: WebView, url: String?) {
+                          view.evaluateJavascript(nativeJs, null)
+                      }
+                  }
+                  wv.addJavascriptInterface(Bridge(), "Android")
+
+                  val bub = TextView(this)
+                  bub.text = "\u265E\uFE0E"
+                  bub.textSize = 28f
+                  bub.setTextColor(Color.WHITE)
+                  bub.gravity = Gravity.CENTER
+                  val bg = GradientDrawable()
+                  bg.shape = GradientDrawable.OVAL
+                  bg.setColor(Color.parseColor("#16A34A"))
+                  bub.background = bg
+                  bub.visibility = View.GONE
+
+                  val r = OverlayRoot(this, this)
+                  r.addView(wv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                  r.addView(bub, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+                  web = wv
+                  bubble = bub
+                  root = r
+                  wm.addView(r, lp)
+                  wv.loadUrl("https://appassets.androidplatform.net/assets/index.html")
+              }
+
+              /* ---------- OverlayHost ---------- */
+
+              override fun isMini(): Boolean = mini
+              override fun headerPx(): Int = if (hdrPx > 0) hdrPx else dp(44)
+              override fun dragWidthPx(): Int = if (dragPx > 0) dragPx else dp(180)
+              override fun posX(): Int = lp.x
+              override fun posY(): Int = lp.y
+              override fun sizeW(): Int = lp.width
+              override fun sizeH(): Int = lp.height
+
+              private fun push() {
+                  val r = root ?: return
+                  wm.updateViewLayout(r, lp)
+              }
+
+              override fun moveTo(x: Int, y: Int) {
+                  lp.x = max(0, min(x, sw() - lp.width))
+                  lp.y = max(0, min(y, sh() - lp.height))
+                  push()
+              }
+
+              override fun resizeTo(w: Int, h: Int) {
+                  if (mini || fit) return
+                  lp.width = max(dp(200), min(w, sw() - lp.x))
+                  lp.height = max(dp(240), min(h, sh() - lp.y))
+                  push()
+              }
+
+              override fun commit() {
+                  if (mini || fit) return
+                  getSharedPreferences("geom", MODE_PRIVATE).edit()
+                      .putInt("x", lp.x)
+                      .putInt("y", lp.y)
+                      .putInt("w", lp.width)
+                      .putInt("h", lp.height)
+                      .apply()
+              }
+
+              override fun restore() {
+                  mini = false
+                  lp.width = saved[2]
+                  lp.height = saved[3]
+                  lp.x = max(0, min(lp.x, sw() - lp.width))
+                  lp.y = max(0, min(lp.y, sh() - lp.height))
+                  bubble?.visibility = View.GONE
+                  web?.visibility = View.VISIBLE
+                  push()
+                  commit()
+              }
+
+              private fun minimize() {
+                  if (mini) return
+                  if (!fit) saved = intArrayOf(lp.x, lp.y, lp.width, lp.height)
+                  fit = false
+                  mini = true
+                  setFocusableFlag(false)
+                  val size = dp(52)
+                  lp.width = size
+                  lp.height = size
+                  lp.x = max(0, min(lp.x, sw() - size))
+                  lp.y = max(0, min(lp.y, sh() - size))
+                  web?.visibility = View.GONE
+                  bubble?.visibility = View.VISIBLE
+                  push()
+              }
+
+              private fun toggleFit() {
+                  if (mini) return
+                  if (!fit) {
+                      saved = intArrayOf(lp.x, lp.y, lp.width, lp.height)
+                      fit = true
+                      lp.x = 0
+                      lp.y = 0
+                      lp.width = sw()
+                      lp.height = sh()
+                      push()
+                  } else {
+                      fit = false
+                      lp.x = saved[0]
+                      lp.y = saved[1]
+                      lp.width = saved[2]
+                      lp.height = saved[3]
+                      push()
+                      commit()
+                  }
+              }
+
+              private fun setFocusableFlag(on: Boolean) {
+                  val r = root ?: return
+                  val f = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                  lp.flags = if (on) (lp.flags and f.inv()) else (lp.flags or f)
+                  wm.updateViewLayout(r, lp)
+                  val w = web ?: return
+                  if (on) {
+                      w.requestFocus()
+                      val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                      ui.postDelayed({ imm.showSoftInput(w, InputMethodManager.SHOW_IMPLICIT) }, 120)
+                  }
+              }
+
+              inner class Bridge {
+                  @JavascriptInterface
+                  fun setZones(headerDp: Float, dragDp: Float) {
+                      val d = resources.displayMetrics.density
+                      ui.post {
+                          hdrPx = (headerDp * d).toInt()
+                          dragPx = (dragDp * d).toInt()
+                      }
+                  }
+
+                  @JavascriptInterface
+                  fun setFocusable(on: Boolean) {
+                      ui.post { setFocusableFlag(on) }
+                  }
+
+                  @JavascriptInterface
+                  fun minimize() {
+                      ui.post { this@OverlayService.minimize() }
+                  }
+
+                  @JavascriptInterface
+                  fun toggleFit() {
+                      ui.post { this@OverlayService.toggleFit() }
+                  }
+
+                  @JavascriptInterface
+                  fun close() {
+                      ui.post { stopSelf() }
+                  }
+              }
+
+              override fun onConfigurationChanged(newConfig: Configuration) {
+                  super.onConfigurationChanged(newConfig)
+                  if (root == null) return
+                  if (fit) {
+                      lp.x = 0
+                      lp.y = 0
+                      lp.width = sw()
+                      lp.height = sh()
+                  } else {
+                      lp.width = min(lp.width, sw())
+                      lp.height = min(lp.height, sh())
+                      lp.x = max(0, min(lp.x, sw() - lp.width))
+                      lp.y = max(0, min(lp.y, sh() - lp.height))
+                  }
+                  push()
+              }
+
+              override fun onDestroy() {
+                  val r = root
+                  if (r != null) {
+                      try {
+                          wm.removeView(r)
+                      } catch (e: Exception) {
+                      }
+                      r.removeAllViews()
+                  }
+                  web?.destroy()
+                  root = null
+                  web = null
+                  bubble = null
+                  super.onDestroy()
+              }
+          }
+          CV_EOF_7
+          mkdir -p "$HOME/.cvkey"
+          if [ ! -f "$HOME/.cvkey/debug.keystore" ]; then keytool -genkeypair -keystore "$HOME/.cvkey/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"; fi
+          cp "$HOME/.cvkey/debug.keystore" "$P/app/debug.keystore"
+          cp index.html "$P/app/src/main/assets/index.html"
+          if [ -f stockfish.js ]; then cp stockfish.js "$P/app/src/main/assets/stockfish.js"; fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Build debug APK
+        working-directory: proj
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChessVision-apk
+          path: proj/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publish as release "latest"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          files: proj/app/build/outputs/apk/debug/app-debug.apk
